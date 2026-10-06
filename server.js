@@ -1,182 +1,210 @@
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
-const { URL } = require("url");
+const express = require('express');
+const path = require('path');
 
+const app = express();
 const PORT = process.env.PORT || 3000;
-const API_KEY = process.env.BRAVE_API_KEY || "";
-// Brave Search APIの無料クレジット相当を超えないためのアプリ側安全装置。
-// 1,000リクエストを上限とし、到達したら検索を停止します。
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const MAX_API_REQUESTS = Number(process.env.MAX_API_REQUESTS || 1000);
-let apiRequestCount = Number(process.env.API_REQUEST_COUNT || 0);
 
-const MEDIA = [
-  { name: "食品新聞", domain: "shokuhin.net" },
-  { name: "日本食糧新聞", domain: "nissyoku.co.jp" },
-  { name: "日経クロストレンド", domain: "xtrend.nikkei.com" },
-  { name: "料理王国", domain: "cuisine-kingdom.com" },
-  { name: "dancyu", domain: "dancyu.jp" },
-  { name: "オレンジページ", domain: "orangepage.net" },
-  { name: "macaroni", domain: "macaro-ni.jp" },
-  { name: "食べログマガジン", domain: "magazine.tabelog.com" },
-  { name: "PR TIMES", domain: "prtimes.jp" },
-  { name: "ELLEグルメ", domain: "elle.com/jp/gourmet" },
-  { name: "ufu", domain: "ufu-sweets.jp" },
-  { name: "ファッションプレス", domain: "fashion-press.net" }
+const DEFAULT_SITES = [
+  { name: '食品新聞', domain: 'shokuhin.net' },
+  { name: '日本食糧新聞', domain: 'nissyoku.co.jp' },
+  { name: '日経クロストレンド', domain: 'xtrend.nikkei.com' },
+  { name: '料理王国', domain: 'cuisine-kingdom.com' },
+  { name: 'dancyu', domain: 'dancyu.jp' },
+  { name: 'オレンジページ', domain: 'orangepage.net' },
+  { name: 'macaroni', domain: 'macaro-ni.jp' },
+  { name: '食べログマガジン', domain: 'magazine.tabelog.com' },
+  { name: 'PR TIMES', domain: 'prtimes.jp' },
+  { name: 'ELLEグルメ', domain: 'elle.com/jp/gourmet' },
+  { name: 'ufu', domain: 'ufu-sweets.jp' },
+  { name: 'ファッションプレス', domain: 'fashion-press.net' }
 ];
 
-const publicDir = path.join(__dirname, "public");
+let apiRequestCount = 0;
+let resetAt = Date.now() + 24 * 60 * 60 * 1000;
 
-function json(res, status, data) {
-  res.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*"
-  });
-  res.end(JSON.stringify(data));
+function maybeResetCounter() {
+  // Safety counter is intentionally simple and in-memory.
+  // It resets after 24h or when the service restarts.
+  if (Date.now() >= resetAt) {
+    apiRequestCount = 0;
+    resetAt = Date.now() + 24 * 60 * 60 * 1000;
+  }
 }
 
-async function searchBrave(query, count) {
-  if (apiRequestCount >= MAX_API_REQUESTS) {
-    throw new Error("無料利用枠の安全上限に達したため、検索を停止しました。Brave API側の利用状況を確認してください。");
+function canUseApi() {
+  maybeResetCounter();
+  return apiRequestCount < MAX_API_REQUESTS;
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const s = String(value).trim();
+
+  // ISO / RFC / common absolute dates.
+  const direct = new Date(s);
+  if (!Number.isNaN(direct.getTime()) && /\d{4}/.test(s)) return direct;
+
+  const now = new Date();
+  const lower = s.toLowerCase();
+  let m;
+  if ((m = lower.match(/(\d+)\s*(minute|min|分)/))) return new Date(now - Number(m[1]) * 60 * 1000);
+  if ((m = lower.match(/(\d+)\s*(hour|hr|時間)/))) return new Date(now - Number(m[1]) * 60 * 60 * 1000);
+  if ((m = lower.match(/(\d+)\s*(day|days|日)/))) return new Date(now - Number(m[1]) * 24 * 60 * 60 * 1000);
+  if ((m = lower.match(/(\d+)\s*(week|weeks|週)/))) return new Date(now - Number(m[1]) * 7 * 24 * 60 * 60 * 1000);
+  if ((m = lower.match(/(\d+)\s*(month|months|か月|ヶ月)/))) return new Date(now - Number(m[1]) * 30 * 24 * 60 * 60 * 1000);
+  if (lower.includes('yesterday') || s.includes('昨日')) return new Date(now - 24 * 60 * 60 * 1000);
+  if (lower.includes('today') || s.includes('今日')) return new Date(now);
+  return null;
+}
+
+function resultDate(result) {
+  return parseDate(result.page_age || result.age || result.published || result.date || result.meta_url?.date);
+}
+
+function normalizeSite(name, domain) {
+  const d = String(domain || '').trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+  return { name: String(name || d), domain: d };
+}
+
+async function braveSearch(query, site, freshness) {
+  if (!BRAVE_API_KEY) throw new Error('BRAVE_API_KEY が設定されていません。');
+  if (!canUseApi()) {
+    const err = new Error('API_REQUEST_LIMIT');
+    err.code = 'API_REQUEST_LIMIT';
+    throw err;
   }
+
+  const url = new URL('https://api.search.brave.com/res/v1/web/search');
+  url.searchParams.set('q', `${query} site:${site.domain}`);
+  url.searchParams.set('count', '20');
+  url.searchParams.set('search_lang', 'ja');
+  url.searchParams.set('country', 'JP');
+  url.searchParams.set('safesearch', 'moderate');
+  if (freshness && freshness !== 'all') url.searchParams.set('freshness', freshness);
+
   apiRequestCount += 1;
-  const endpoint = new URL("https://api.search.brave.com/res/v1/web/search");
-  endpoint.searchParams.set("q", query);
-  endpoint.searchParams.set("count", String(count));
-  endpoint.searchParams.set("country", "JP");
-  endpoint.searchParams.set("search_lang", "jp");
-  endpoint.searchParams.set("safesearch", "moderate");
-
-  const r = await fetch(endpoint, {
+  const response = await fetch(url, {
     headers: {
-      "Accept": "application/json",
-      "Accept-Encoding": "gzip",
-      "X-Subscription-Token": API_KEY
+      'Accept': 'application/json',
+      'X-Subscription-Token': BRAVE_API_KEY
     }
   });
 
-  if (!r.ok) {
-    const body = await r.text();
-    throw new Error(`Brave API ${r.status}: ${body.slice(0, 300)}`);
-  }
-  return r.json();
-}
-
-function dedupe(items) {
-  const seen = new Set();
-  return items.filter(x => {
-    const key = x.url.replace(/[?#].*$/, "").replace(/\/$/, "");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-async function handleSearch(req, res) {
-  if (!API_KEY) {
-    return json(res, 500, {
-      error: "BRAVE_API_KEY が設定されていません。READMEの手順でAPIキーを設定してください。"
-    });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Brave API error ${response.status}: ${body.slice(0, 300)}`);
   }
 
-  const u = new URL(req.url, `http://${req.headers.host}`);
-  const q = (u.searchParams.get("q") || "").trim();
-  const limit = Math.min(Math.max(Number(u.searchParams.get("limit") || 5), 1), 10);
-  const selected = (u.searchParams.get("sites") || "").split(",").filter(Boolean);
-  const customDomains = (u.searchParams.get("custom") || "").split(",")
-    .map(s => s.trim().replace(/^https?:\/\//, "").replace(/\/$/, ""))
-    .filter(Boolean)
-    .map(domain => ({ name: domain, domain }));
-
-  if (!q) return json(res, 400, { error: "検索キーワードを入力してください。" });
-
-  let sites = selected.length
-    ? MEDIA.filter(m => selected.includes(m.domain))
-    : MEDIA;
-  sites = [...sites, ...customDomains];
-
-  // この検索で必要になるAPIリクエスト数を事前確認。
-  if (apiRequestCount + sites.length > MAX_API_REQUESTS) {
-    return json(res, 402, {
-      error: `無料利用枠の安全上限を超えるため検索を停止しました。現在のアプリ内使用回数: ${apiRequestCount} / ${MAX_API_REQUESTS}。`
-    });
-  }
-
-  const results = [];
-  const errors = [];
-
-  await Promise.all(sites.map(async media => {
-    try {
-      const data = await searchBrave(`site:${media.domain} "${q}"`, limit);
-      const rows = (data.web?.results || []).map(item => ({
-        media: media.name,
-        domain: media.domain,
-        title: item.title || "",
-        url: item.url || "",
-        description: item.description || "",
-        age: item.age || ""
-      }));
-      results.push(...rows);
-    } catch (e) {
-      errors.push({ media: media.name, message: e.message });
-    }
+  const data = await response.json();
+  return (data.web?.results || []).map((r) => ({
+    title: r.title || '(タイトルなし)',
+    url: r.url,
+    description: r.description || '',
+    siteName: site.name,
+    domain: site.domain,
+    pageAge: r.page_age || r.age || '',
+    publishedDate: resultDate(r)?.toISOString() || null,
+    extraSnippets: r.extra_snippets || []
   }));
-
-  const clean = dedupe(results).sort((a,b) => {
-    if (a.media === b.media) return 0;
-    return a.media.localeCompare(b.media, "ja");
-  });
-
-  json(res, 200, {
-    query: q,
-    searchedSites: sites.map(s => s.name),
-    count: clean.length,
-    results: clean,
-    errors
-  });
 }
 
-function serveStatic(req, res) {
-  let pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
-  if (pathname === "/") pathname = "/index.html";
-  const safe = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, "");
-  const file = path.join(publicDir, safe);
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-  if (!file.startsWith(publicDir)) {
-    res.writeHead(403); return res.end("Forbidden");
-  }
-
-  fs.readFile(file, (err, data) => {
-    if (err) {
-      res.writeHead(404); return res.end("Not Found");
-    }
-    const ext = path.extname(file);
-    const types = {
-      ".html": "text/html; charset=utf-8",
-      ".css": "text/css; charset=utf-8",
-      ".js": "text/javascript; charset=utf-8"
-    };
-    res.writeHead(200, {"Content-Type": types[ext] || "application/octet-stream"});
-    res.end(data);
+app.get('/api/config', (req, res) => {
+  maybeResetCounter();
+  res.json({
+    sites: DEFAULT_SITES,
+    maxApiRequests: MAX_API_REQUESTS,
+    apiRequestsUsed: apiRequestCount,
+    note: 'アプリ側の安全上限です。Render再起動等でカウンターはリセットされます。'
   });
-}
-
-const server = http.createServer((req, res) => {
-  if (req.method === "GET" && req.url.startsWith("/api/status")) {
-    return json(res, 200, {
-      apiRequestCount,
-      maxApiRequests: MAX_API_REQUESTS,
-      remaining: Math.max(0, MAX_API_REQUESTS - apiRequestCount)
-    });
-  }
-  if (req.method === "GET" && req.url.startsWith("/api/search")) {
-    return handleSearch(req, res);
-  }
-  if (req.method === "GET") return serveStatic(req, res);
-  res.writeHead(405); res.end("Method Not Allowed");
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Magazine Cross Search: http://localhost:${PORT}`);
-  if (!API_KEY) console.log("WARNING: BRAVE_API_KEY is not set.");
+app.post('/api/search', async (req, res) => {
+  try {
+    const query = String(req.body?.query || '').trim();
+    const sort = req.body?.sort === 'newest' ? 'newest' : 'relevance';
+    const freshness = String(req.body?.freshness || 'all');
+    const customDomains = Array.isArray(req.body?.customDomains) ? req.body.customDomains : [];
+
+    if (!query) return res.status(400).json({ error: '検索キーワードを入力してください。' });
+    if (!BRAVE_API_KEY) return res.status(500).json({ error: 'Brave APIキーがRenderに設定されていません。' });
+
+    const customSites = customDomains
+      .map((item) => normalizeSite(item.name || item.domain, item.domain || item.name))
+      .filter((x) => x.domain && x.domain.includes('.'));
+
+    const sites = [...DEFAULT_SITES, ...customSites];
+    const seenSites = new Set();
+    const uniqueSites = sites.filter((s) => {
+      const key = s.domain.toLowerCase();
+      if (seenSites.has(key)) return false;
+      seenSites.add(key);
+      return true;
+    });
+
+    if (uniqueSites.length > MAX_API_REQUESTS - apiRequestCount) {
+      return res.status(429).json({
+        error: `今回の検索対象サイト数（${uniqueSites.length}）が、残りのアプリ側安全上限（${Math.max(0, MAX_API_REQUESTS - apiRequestCount)}回）を超えます。対象サイトを減らしてください。`
+      });
+    }
+
+    const settled = await Promise.allSettled(uniqueSites.map((site) => braveSearch(query, site, freshness)));
+    const results = [];
+    const errors = [];
+    for (let i = 0; i < settled.length; i++) {
+      const item = settled[i];
+      if (item.status === 'fulfilled') results.push(...item.value);
+      else errors.push({ site: uniqueSites[i].name, error: item.reason?.message || '検索エラー' });
+    }
+
+    // Same URL can appear from multiple site/domain queries. Keep one copy.
+    const seenUrls = new Set();
+    const deduped = results.filter((r) => {
+      const key = r.url;
+      if (!key || seenUrls.has(key)) return false;
+      seenUrls.add(key);
+      return true;
+    });
+
+    if (sort === 'newest') {
+      deduped.sort((a, b) => {
+        const ad = a.publishedDate ? Date.parse(a.publishedDate) : NaN;
+        const bd = b.publishedDate ? Date.parse(b.publishedDate) : NaN;
+        if (Number.isNaN(ad) && Number.isNaN(bd)) return 0;
+        if (Number.isNaN(ad)) return 1;
+        if (Number.isNaN(bd)) return -1;
+        return bd - ad;
+      });
+    }
+
+    res.json({
+      query,
+      sort,
+      freshness,
+      results: deduped,
+      errors,
+      apiRequestsUsed: apiRequestCount,
+      maxApiRequests: MAX_API_REQUESTS,
+      searchedSites: uniqueSites.length
+    });
+  } catch (error) {
+    if (error.code === 'API_REQUEST_LIMIT') {
+      return res.status(429).json({ error: 'アプリ側のAPI安全上限に達したため、検索を停止しました。' });
+    }
+    console.error(error);
+    res.status(500).json({ error: error.message || '検索中にエラーが発生しました。' });
+  }
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(PORT, () => {
+  console.log(`Food Media Cross Search running on port ${PORT}`);
 });
