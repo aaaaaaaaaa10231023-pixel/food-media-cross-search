@@ -2,129 +2,104 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>雑誌サイト横断検索</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>食品メディア横断検索</title>
 <style>
-*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP","Yu Gothic",sans-serif;background:#f5f6f8;color:#1d2430}
-header{background:#111827;color:white;padding:28px 24px} header h1{margin:0 0 6px;font-size:25px} header p{margin:0;color:#cbd5e1}
-main{max-width:1180px;margin:28px auto;padding:0 18px}
-.panel{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:18px;box-shadow:0 4px 16px #00000008}
-.search{display:flex;gap:10px}.search input{flex:1;font-size:18px;padding:14px;border:1px solid #cbd5e1;border-radius:9px}.search button{padding:0 24px;border:0;border-radius:9px;background:#111827;color:white;font-weight:700;cursor:pointer}
-.options{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.chip{border:1px solid #d1d5db;border-radius:999px;padding:7px 11px;background:white;font-size:13px}.chip input{margin-right:5px}
-.toolbar{display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px}.muted{color:#6b7280;font-size:13px}
-.result{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:10px 0}.result h3{margin:0 0 7px;font-size:17px}.result a{color:#1d4ed8;text-decoration:none}.result a:hover{text-decoration:underline}.meta{font-size:12px;color:#6b7280;margin-bottom:7px}.desc{line-height:1.6;color:#374151}
-.badge{display:inline-block;background:#eef2ff;color:#3730a3;border-radius:5px;padding:3px 7px;margin-right:7px;font-size:11px}
-.error{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:12px;border-radius:8px;margin-top:12px}
-.empty{text-align:center;padding:50px;color:#6b7280}
-#loading{display:none;margin:18px 0}
-.safety{margin-top:14px;padding:10px 12px;border-radius:8px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-size:13px}
-.export{border:1px solid #cbd5e1;background:white;border-radius:8px;padding:8px 12px;cursor:pointer}
+  :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;color:#222;background:#f6f7f9}
+  *{box-sizing:border-box} body{margin:0;background:#f6f7f9}.wrap{max-width:1100px;margin:0 auto;padding:28px 18px 50px}
+  h1{font-size:28px;margin:0 0 8px}.lead{color:#666;margin:0 0 22px}.panel{background:#fff;border:1px solid #e2e5e9;border-radius:14px;padding:18px;box-shadow:0 3px 12px rgba(0,0,0,.04);margin-bottom:18px}
+  .searchrow{display:flex;gap:10px}.searchrow input{flex:1;min-width:0;padding:13px 14px;border:1px solid #cfd4da;border-radius:9px;font-size:16px}.btn{border:0;border-radius:9px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;background:#222;color:#fff}.btn:disabled{opacity:.5;cursor:not-allowed}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.control label{display:block;font-size:13px;font-weight:700;margin-bottom:7px;color:#555}.control select{width:100%;padding:11px;border:1px solid #cfd4da;border-radius:8px;background:#fff;font-size:14px}
+  .custom{margin-top:14px}.custom input{width:100%;padding:11px;border:1px solid #cfd4da;border-radius:8px;font-size:14px}.hint{font-size:12px;color:#777;margin-top:6px}
+  .status{font-size:13px;color:#666;margin-top:12px}.error{background:#fff1f1;border:1px solid #ffcaca;color:#a40000;padding:11px;border-radius:8px;margin-bottom:12px}.result{padding:16px 0;border-bottom:1px solid #eceff2}.result:last-child{border-bottom:0}.result h3{font-size:17px;line-height:1.5;margin:0 0 6px}.result h3 a{color:#1267b1;text-decoration:none}.result h3 a:hover{text-decoration:underline}.meta{font-size:12px;color:#666;margin-bottom:7px}.desc{font-size:14px;line-height:1.65;color:#444}.empty{color:#777;text-align:center;padding:28px}.badge{display:inline-block;background:#eef3f8;color:#445;padding:3px 7px;border-radius:999px;margin-right:6px}
+  .sites{font-size:12px;color:#666;line-height:1.7}.small{font-size:12px;color:#777}.loading{display:none;margin-top:10px;color:#555}
+  @media(max-width:700px){.searchrow{flex-direction:column}.controls{grid-template-columns:1fr}.btn{width:100%}}
 </style>
 </head>
 <body>
-<header><h1>雑誌・メディアサイト 横断検索</h1><p>1つのキーワードを複数媒体からまとめて検索します。</p></header>
-<main>
-<section class="panel">
-  <div class="search">
-    <input id="q" placeholder="例：エビカツ、北海道スイーツ、ポテトチップス" autofocus>
-    <button id="go">検索</button>
-  </div>
-  <div class="options" id="sites"></div>
-  <div class="safety">🛡️ <b>無料枠保護：</b>無料利用枠相当の1,000 APIリクエストをアプリ側の上限に設定しています。上限に達すると検索を自動停止します。</div>
-  <div style="margin-top:14px">
-    <label class="muted">食品メーカーサイト（任意・複数可）</label>
-    <input id="custom" style="width:100%;margin-top:6px;font-size:14px;padding:10px;border:1px solid #cbd5e1;border-radius:8px"
-      placeholder="例：meiji.co.jp, calbee.co.jp, nissin.com">
-  </div>
-</section>
+<div class="wrap">
+  <h1>食品メディア横断検索</h1>
+  <p class="lead">キーワード1つで、食品・飲食・トレンド系メディアを横断検索します。</p>
 
-<div id="loading">検索中です…</div>
-<div class="toolbar">
-  <div>
-    <div id="summary" class="muted"></div>
-    <div id="usage" class="muted"></div>
-  </div>
-  <button class="export" id="csv" style="display:none">CSV出力</button>
+  <section class="panel">
+    <div class="searchrow">
+      <input id="query" type="text" placeholder="例：エビカツ、白ワイン、北海道スイーツ" autocomplete="off">
+      <button id="searchBtn" class="btn">検索</button>
+    </div>
+    <div class="controls">
+      <div class="control">
+        <label for="sort">並び順</label>
+        <select id="sort">
+          <option value="relevance">関連度順</option>
+          <option value="newest">新しい順</option>
+        </select>
+      </div>
+      <div class="control">
+        <label for="freshness">期間指定</label>
+        <select id="freshness">
+          <option value="all">指定なし（すべて）</option>
+          <option value="pd">過去24時間</option>
+          <option value="pw">過去7日間</option>
+          <option value="pm">過去30日間</option>
+          <option value="py">過去1年間</option>
+        </select>
+      </div>
+    </div>
+    <div class="custom">
+      <label class="small" for="customDomains">追加したいサイト（任意）</label>
+      <input id="customDomains" type="text" placeholder="例：company.co.jp, example.com">
+      <div class="hint">ドメインをカンマ区切りで入力すると、そのサイトも今回の検索対象に追加します。</div>
+    </div>
+    <div id="loading" class="loading">検索中です……</div>
+    <div id="status" class="status"></div>
+  </section>
+
+  <section class="panel">
+    <div id="message" class="empty">キーワードを入力して検索してください。</div>
+    <div id="results"></div>
+  </section>
 </div>
-<div id="errors"></div>
-<div id="results"><div class="empty">キーワードを入力して検索してください。</div></div>
-</main>
-
 <script>
-const SITE_LIST = [
-  ["食品新聞","shokuhin.net"],["日本食糧新聞","nissyoku.co.jp"],["日経クロストレンド","xtrend.nikkei.com"],
-  ["料理王国","cuisine-kingdom.com"],["dancyu","dancyu.jp"],["オレンジページ","orangepage.net"],
-  ["macaroni","macaro-ni.jp"],["食べログマガジン","magazine.tabelog.com"],["PR TIMES","prtimes.jp"],
-  ["ELLEグルメ","elle.com/jp/gourmet"],["ufu","ufu-sweets.jp"],["ファッションプレス","fashion-press.net"]
-];
-let lastResults=[];
+const $ = (id) => document.getElementById(id);
+const query = $('query'), sort = $('sort'), freshness = $('freshness'), customDomains = $('customDomains');
+const searchBtn = $('searchBtn'), loading = $('loading'), status = $('status'), message = $('message'), results = $('results');
 
-const siteBox=document.getElementById("sites");
-SITE_LIST.forEach(([name,domain],i)=>{
-  const label=document.createElement("label"); label.className="chip";
-  label.innerHTML=`<input type="checkbox" value="${domain}" checked> ${name}`;
-  siteBox.appendChild(label);
-});
-
-async function updateUsage(){
-  try{
-    const r=await fetch("/api/status"); const d=await r.json();
-    document.getElementById("usage").textContent=`API使用回数（このツール内）: ${d.apiRequestCount} / ${d.maxApiRequests}　残り: ${d.remaining}`;
-  }catch(e){}
+function esc(s){return String(s ?? '').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function fmtDate(iso){
+  if(!iso) return '日付情報なし';
+  const d=new Date(iso); if(Number.isNaN(d.getTime())) return '日付情報なし';
+  return d.toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit'});
 }
-updateUsage();
+function customList(){
+  return customDomains.value.split(',').map(x=>x.trim()).filter(Boolean).map(domain=>({name:domain,domain}));
+}
 
 async function search(){
-  const q=document.getElementById("q").value.trim();
-  if(!q){alert("キーワードを入力してください。");return;}
-  const sites=[...document.querySelectorAll("#sites input:checked")].map(x=>x.value);
-  const custom=document.getElementById("custom").value.split(",").map(x=>x.trim()).filter(Boolean);
-  if(!sites.length){alert("少なくとも1媒体を選択してください。");return;}
-
-  document.getElementById("loading").style.display="block";
-  document.getElementById("results").innerHTML="";
-  document.getElementById("errors").innerHTML="";
-  document.getElementById("csv").style.display="none";
-
+  const q=query.value.trim();
+  if(!q){ message.textContent='検索キーワードを入力してください。'; results.innerHTML=''; return; }
+  searchBtn.disabled=true; loading.style.display='block'; status.textContent=''; message.textContent=''; results.innerHTML='';
   try{
-    const url="/api/search?q="+encodeURIComponent(q)+"&limit=5&sites="+encodeURIComponent(sites.join(","))+"&custom="+encodeURIComponent(custom.join(","));
-    const r=await fetch(url); const data=await r.json();
-    if(!r.ok) throw new Error(data.error||"検索に失敗しました");
-    lastResults=data.results||[];
-    document.getElementById("summary").textContent=`「${data.query}」：${data.count}件 / ${data.searchedSites.length}媒体`;
+    const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q,sort:sort.value,freshness:freshness.value,customDomains:customList()})});
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error||'検索に失敗しました。');
+    status.textContent=`${data.results.length}件｜${data.searchedSites}サイトを検索｜API使用 ${data.apiRequestsUsed}/${data.maxApiRequests}`;
     if(data.errors?.length){
-      document.getElementById("errors").innerHTML='<div class="error">'+data.errors.map(e=>`${e.media}: ${escapeHtml(e.message)}`).join("<br>").replace(/</g,"&lt;")+'</div>';
+      status.textContent += `｜一部サイトでエラー ${data.errors.length}件`;
     }
-    render(lastResults);
-    if(lastResults.length) document.getElementById("csv").style.display="block";
+    if(!data.results.length){ message.textContent='該当する検索結果がありませんでした。'; return; }
+    results.innerHTML=data.results.map(r=>`<article class="result">
+      <h3><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.title)}</a></h3>
+      <div class="meta"><span class="badge">${esc(r.siteName)}</span>${r.publishedDate?esc(fmtDate(r.publishedDate)):''}${r.pageAge?'（'+esc(r.pageAge)+'）':''}</div>
+      <div class="desc">${esc(r.description)}</div>
+    </article>`).join('');
   }catch(e){
-    document.getElementById("results").innerHTML=`<div class="error">${escapeHtml(e.message)}</div>`;
+    message.innerHTML='<div class="error">'+esc(e.message)+'</div>';
   }finally{
-    document.getElementById("loading").style.display="none";
-    updateUsage();
+    searchBtn.disabled=false; loading.style.display='none';
   }
 }
-
-function render(rows){
-  const box=document.getElementById("results");
-  if(!rows.length){box.innerHTML='<div class="empty">検索結果がありません。</div>';return;}
-  box.innerHTML=rows.map(x=>`
-    <article class="result">
-      <div class="meta"><span class="badge">${escapeHtml(x.media)}</span>${escapeHtml(x.domain)} ${x.age?`・${escapeHtml(x.age)}`:""}</div>
-      <h3><a href="${encodeURI(x.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.title)}</a></h3>
-      <div class="desc">${escapeHtml(x.description)}</div>
-    </article>`).join("");
-}
-function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
-
-document.getElementById("go").onclick=search;
-document.getElementById("q").addEventListener("keydown",e=>{if(e.key==="Enter")search()});
-document.getElementById("csv").onclick=()=>{
-  const rows=[["媒体","ドメイン","タイトル","URL","概要","掲載時期"],...lastResults.map(x=>[x.media,x.domain,x.title,x.url,x.description,x.age])];
-  const csv="\uFEFF"+rows.map(r=>r.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
-  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
-  a.download="magazine-search-results.csv"; a.click(); URL.revokeObjectURL(a.href);
-};
+searchBtn.addEventListener('click',search);
+query.addEventListener('keydown',e=>{if(e.key==='Enter')search();});
 </script>
 </body>
 </html>
