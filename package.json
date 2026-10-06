@@ -1,0 +1,12 @@
+{
+  "name": "magazine-cross-search",
+  "version": "2.0.0",
+  "private": true,
+  "description": "複数の雑誌・メディアサイトを横断検索する簡易Webツール",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

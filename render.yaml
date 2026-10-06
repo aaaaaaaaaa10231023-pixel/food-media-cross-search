@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: food-media-cross-search
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: BRAVE_API_KEY
+        sync: false
+      - key: MAX_API_REQUESTS
+        value: "1000"
